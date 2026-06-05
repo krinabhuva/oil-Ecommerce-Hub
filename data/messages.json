@@ -1,0 +1,26 @@
+[
+  {
+    "id": 1,
+    "customerName": "John",
+    "phone": "1234567890",
+    "message": "test message",
+    "isRead": true,
+    "createdAt": "2026-06-05T04:50:14.506Z"
+  },
+  {
+    "id": 2,
+    "customerName": "krina",
+    "phone": "65789451230",
+    "message": "hello",
+    "isRead": true,
+    "createdAt": "2026-06-05T04:59:08.339Z"
+  },
+  {
+    "id": 3,
+    "customerName": "krina",
+    "phone": "7896541023",
+    "message": "test",
+    "isRead": true,
+    "createdAt": "2026-06-05T05:01:17.574Z"
+  }
+]
