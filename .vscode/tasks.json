@@ -1,0 +1,24 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Install Dependencies",
+      "type": "shell",
+      "command": "pnpm.cmd install",
+      "problemMatcher": []
+    },
+    {
+      "label": "Start Expo",
+      "type": "shell",
+      "command": "pnpm.cmd exec expo start",
+      "isBackground": true,
+      "problemMatcher": []
+    },
+    {
+      "label": "Typecheck",
+      "type": "shell",
+      "command": "pnpm.cmd run typecheck",
+      "problemMatcher": ["$tsc"]
+    }
+  ]
+}

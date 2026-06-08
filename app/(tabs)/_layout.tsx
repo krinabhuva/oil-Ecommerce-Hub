@@ -1,5 +1,6 @@
-import { Redirect } from "expo-router";
+// @ts-nocheck
+import React from "react";
 
 export default function TabsLayout() {
-  return <Redirect href="/" />;
+  return null;
 }

@@ -14,15 +14,99 @@ const fs = require("fs");
 const path = require("path");
 const url = require("url");
 
-const STATIC_ROOT = path.resolve(__dirname, "..", "static-build");
+const STATIC_ROOT = path.resolve(__dirname, "..", "dist");
 const TEMPLATE_PATH = path.resolve(__dirname, "templates", "landing-page.html");
 const DATA_DIR = path.resolve(__dirname, "..", "data");
 const MESSAGES_FILE = path.join(DATA_DIR, "messages.json");
+const PRICES_FILE = path.join(DATA_DIR, "prices.json");
 const basePath = (process.env.BASE_PATH || "/").replace(/\/+$/, "");
 
 // Ensure data directory exists
 if (!fs.existsSync(DATA_DIR)) {
   fs.mkdirSync(DATA_DIR, { recursive: true });
+}
+
+// Prices management
+const DEFAULT_PRICES = {
+  maruti_groundnut: 2800,
+  maharani_groundnut: 3199,
+  saraswati_groundnut: 3301,
+  saurashtra_pure: 3000,
+  amrutdhara_groundnut: 3099,
+  sungold_sunflower: 2490,
+  sunfit_sunflower: 2400,
+  sunhealth_sunflower: 2800,
+  sunfresh_sunflower: 2799,
+  naturallife_sunflower: 2800,
+  sunplus_sunflower: 2799,
+  forsun_sunflower: 2799,
+  forline_sunflower: 2799,
+  forking_sunflower: 3000,
+  updatedAt: new Date().toISOString()
+};
+
+function loadPricesFromFile() {
+  try {
+    if (fs.existsSync(PRICES_FILE)) {
+      const data = fs.readFileSync(PRICES_FILE, "utf-8");
+      return JSON.parse(data);
+    }
+  } catch (_e) {}
+  try {
+    fs.writeFileSync(PRICES_FILE, JSON.stringify(DEFAULT_PRICES, null, 2), "utf-8");
+  } catch (_e) {}
+  return DEFAULT_PRICES;
+}
+
+function savePricesToFile(prices) {
+  try {
+    fs.writeFileSync(PRICES_FILE, JSON.stringify(prices, null, 2), "utf-8");
+  } catch (_e) {}
+}
+
+async function handlePricesGET(res) {
+  try {
+    const prices = loadPricesFromFile();
+    res.writeHead(200, { "content-type": "application/json" });
+    res.end(JSON.stringify(prices));
+  } catch (err) {
+    res.writeHead(500, { "content-type": "application/json" });
+    res.end(JSON.stringify({ error: "Server error" }));
+  }
+}
+
+async function handlePricesPOST(req, res) {
+  let body = "";
+  req.on("data", (chunk) => {
+    body += chunk.toString();
+  });
+  req.on("end", async () => {
+    try {
+      const pricesMap = JSON.parse(body);
+      
+      // Validation: verify that each key other than 'updatedAt' is a positive number
+      const newPrices = {};
+      for (const [key, val] of Object.entries(pricesMap)) {
+        if (key === "updatedAt") continue;
+        const num = Number(val);
+        if (isNaN(num) || num <= 0) {
+          res.writeHead(400, { "content-type": "application/json" });
+          res.end(JSON.stringify({ error: `Invalid price for ${key}: must be a positive number` }));
+          return;
+        }
+        newPrices[key] = num;
+      }
+      
+      newPrices.updatedAt = new Date().toISOString();
+
+      savePricesToFile(newPrices);
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify(newPrices));
+    } catch (_e) {
+      res.writeHead(400, { "content-type": "application/json" });
+      res.end(JSON.stringify({ error: "Invalid request" }));
+    }
+  });
 }
 
 const MIME_TYPES = {
@@ -44,7 +128,30 @@ const MIME_TYPES = {
 };
 
 // Message management functions
-function loadMessages() {
+// MongoDB integration (optional). If `MONGODB_URI` is provided, messages
+// will be stored in MongoDB; otherwise we fall back to file-backed JSON.
+let mongoClient = null;
+let messagesCollection = null;
+
+async function initMongo() {
+  const uri = process.env.MONGODB_URI;
+  if (!uri) return;
+  try {
+    const { MongoClient } = await import("mongodb");
+    mongoClient = new MongoClient(uri);
+    await mongoClient.connect();
+    const dbName = process.env.MONGODB_DB || "oil_shop";
+    const db = mongoClient.db(dbName);
+    messagesCollection = db.collection("messages");
+    await messagesCollection.createIndex({ createdAt: 1 });
+    console.log("Connected to MongoDB", uri, dbName);
+  } catch (err) {
+    console.error("MongoDB connection failed:", err && err.message ? err.message : err);
+    messagesCollection = null;
+  }
+}
+
+function loadMessagesFromFile() {
   try {
     if (fs.existsSync(MESSAGES_FILE)) {
       const data = fs.readFileSync(MESSAGES_FILE, "utf-8");
@@ -54,30 +161,41 @@ function loadMessages() {
   return [];
 }
 
-function saveMessages(messages) {
+function saveMessagesToFile(messages) {
   try {
     fs.writeFileSync(MESSAGES_FILE, JSON.stringify(messages, null, 2), "utf-8");
   } catch (_e) {}
 }
 
-function getNextMessageId() {
-  const messages = loadMessages();
-  if (messages.length === 0) return 1;
-  return Math.max(...messages.map((m) => m.id)) + 1;
+async function handleMessagesGET(res) {
+  try {
+    if (messagesCollection) {
+      const docs = await messagesCollection.find({}).sort({ createdAt: 1 }).toArray();
+      const messages = docs.map((d) => {
+        const copy = { ...d };
+        delete copy._id;
+        return copy;
+      });
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify(messages));
+      return;
+    }
+
+    const messages = loadMessagesFromFile();
+    res.writeHead(200, { "content-type": "application/json" });
+    res.end(JSON.stringify(messages));
+  } catch (err) {
+    res.writeHead(500, { "content-type": "application/json" });
+    res.end(JSON.stringify({ error: "Server error" }));
+  }
 }
 
-function handleMessagesGET(res) {
-  const messages = loadMessages();
-  res.writeHead(200, { "content-type": "application/json" });
-  res.end(JSON.stringify(messages));
-}
-
-function handleMessagesPOST(req, res) {
+async function handleMessagesPOST(req, res) {
   let body = "";
   req.on("data", (chunk) => {
     body += chunk.toString();
   });
-  req.on("end", () => {
+  req.on("end", async () => {
     try {
       const { customerName, phone, message } = JSON.parse(body);
       if (!message || !message.trim()) {
@@ -86,17 +204,27 @@ function handleMessagesPOST(req, res) {
         return;
       }
 
-      const messages = loadMessages();
       const newMessage = {
-        id: getNextMessageId(),
+        id: Date.now(),
         customerName: customerName || null,
         phone: phone || null,
         message: message.trim(),
         isRead: false,
         createdAt: new Date().toISOString(),
       };
+
+      if (messagesCollection) {
+        await messagesCollection.insertOne(newMessage);
+        const copy = { ...newMessage };
+        res.writeHead(201, { "content-type": "application/json" });
+        res.end(JSON.stringify(copy));
+        return;
+      }
+
+      // Fallback to file storage
+      const messages = loadMessagesFromFile();
       messages.push(newMessage);
-      saveMessages(messages);
+      saveMessagesToFile(messages);
 
       res.writeHead(201, { "content-type": "application/json" });
       res.end(JSON.stringify(newMessage));
@@ -107,9 +235,27 @@ function handleMessagesPOST(req, res) {
   });
 }
 
-function handleMessageMarkRead(messageId, res) {
+async function handleMessageMarkRead(messageId, res) {
   try {
-    const messages = loadMessages();
+    if (messagesCollection) {
+      const result = await messagesCollection.findOneAndUpdate(
+        { id: messageId },
+        { $set: { isRead: true } },
+        { returnDocument: "after" },
+      );
+      if (!result.value) {
+        res.writeHead(404, { "content-type": "application/json" });
+        res.end(JSON.stringify({ error: "Message not found" }));
+        return;
+      }
+      const copy = { ...result.value };
+      delete copy._id;
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify(copy));
+      return;
+    }
+
+    const messages = loadMessagesFromFile();
     const messageIndex = messages.findIndex((m) => m.id === messageId);
     if (messageIndex === -1) {
       res.writeHead(404, { "content-type": "application/json" });
@@ -117,7 +263,7 @@ function handleMessageMarkRead(messageId, res) {
       return;
     }
     messages[messageIndex].isRead = true;
-    saveMessages(messages);
+    saveMessagesToFile(messages);
 
     res.writeHead(200, { "content-type": "application/json" });
     res.end(JSON.stringify(messages[messageIndex]));
@@ -228,6 +374,14 @@ const server = http.createServer((req, res) => {
     }
   }
 
+  if (pathname === "/api/prices") {
+    if (req.method === "GET") {
+      return handlePricesGET(res);
+    } else if (req.method === "POST") {
+      return handlePricesPOST(req, res);
+    }
+  }
+
   // Handle mark message as read
   const messageReadMatch = pathname.match(/^\/api\/messages\/(\d+)\/read$/);
   if (messageReadMatch && req.method === "PATCH") {
@@ -250,7 +404,10 @@ const server = http.createServer((req, res) => {
   serveStaticFile(pathname, res);
 });
 
-const port = parseInt(process.env.PORT || "3000", 10);
-server.listen(port, "0.0.0.0", () => {
-  console.log(`Serving static Expo build on port ${port}`);
-});
+(async () => {
+  await initMongo();
+  const port = parseInt(process.env.PORT || "3000", 10);
+  server.listen(port, "0.0.0.0", () => {
+    console.log(`Serving static Expo build on port ${port}`);
+  });
+})();

@@ -1,4 +1,4 @@
-import AsyncStorage from "@react-native-async-storage/async-storage";
+// use localStorage for web
 import React, {
   createContext,
   useCallback,
@@ -9,21 +9,35 @@ import React, {
 
 import { OIL_PRODUCTS } from "@/data/oils";
 
-const PRICES_KEY = "@oil_shop_prices";
 const PASSWORD_KEY = "@oil_shop_password";
-const LAST_UPDATED_KEY = "@oil_shop_last_updated";
 const DEFAULT_PASSWORD = "1234";
+const API_BASE = import.meta.env.VITE_API_BASE ?? "http://localhost:3000/api";
 
 interface OilContextValue {
   prices: Record<string, number>;
   adminPassword: string;
   lastUpdated: string | null;
+  fetchPrices: () => Promise<void>;
   updatePrices: (newPrices: Record<string, number>) => Promise<void>;
   changePassword: (newPassword: string) => Promise<void>;
   checkPassword: (attempt: string) => boolean;
 }
 
 const OilContext = createContext<OilContextValue | null>(null);
+
+function formatUpdateDate(isoString: string): string {
+  try {
+    return new Date(isoString).toLocaleDateString("en-IN", {
+      day: "numeric",
+      month: "short",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  } catch (_e) {
+    return isoString;
+  }
+}
 
 export function OilProvider({ children }: { children: React.ReactNode }) {
   const [prices, setPrices] = useState<Record<string, number>>(() => {
@@ -36,51 +50,64 @@ export function OilProvider({ children }: { children: React.ReactNode }) {
   const [adminPassword, setAdminPassword] = useState(DEFAULT_PASSWORD);
   const [lastUpdated, setLastUpdated] = useState<string | null>(null);
 
-  useEffect(() => {
-    async function load() {
-      try {
-        const [storedPrices, storedPassword, storedUpdated] = await Promise.all(
-          [
-            AsyncStorage.getItem(PRICES_KEY),
-            AsyncStorage.getItem(PASSWORD_KEY),
-            AsyncStorage.getItem(LAST_UPDATED_KEY),
-          ]
-        );
-
-        if (storedPrices) {
-          const parsed = JSON.parse(storedPrices) as Record<string, number>;
-          const defaults: Record<string, number> = {};
-          for (const oil of OIL_PRODUCTS) {
-            defaults[oil.id] = oil.defaultPrice;
-          }
-          setPrices({ ...defaults, ...parsed });
+  const fetchPrices = useCallback(async () => {
+    try {
+      const res = await fetch(`${API_BASE}/prices`);
+      if (res.ok) {
+        const data = await res.json();
+        const { updatedAt, ...productPrices } = data;
+        
+        const defaults: Record<string, number> = {};
+        for (const oil of OIL_PRODUCTS) {
+          defaults[oil.id] = oil.defaultPrice;
         }
-        if (storedPassword) setAdminPassword(storedPassword);
-        if (storedUpdated) setLastUpdated(storedUpdated);
-      } catch (_e) {}
+        
+        setPrices({ ...defaults, ...productPrices });
+        setLastUpdated(formatUpdateDate(updatedAt));
+      }
+    } catch (_e) {
+      console.error("Failed to fetch prices from API");
     }
-    load();
   }, []);
 
   const updatePrices = useCallback(async (newPrices: Record<string, number>) => {
-    const now = new Date().toLocaleDateString("en-IN", {
-      day: "numeric",
-      month: "short",
-      year: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
+    const res = await fetch(`${API_BASE}/prices`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(newPrices),
     });
-    setPrices(newPrices);
-    setLastUpdated(now);
-    await Promise.all([
-      AsyncStorage.setItem(PRICES_KEY, JSON.stringify(newPrices)),
-      AsyncStorage.setItem(LAST_UPDATED_KEY, now),
-    ]);
+    if (!res.ok) {
+      throw new Error("Failed to update prices");
+    }
+    const data = await res.json();
+    const { updatedAt, ...productPrices } = data;
+    
+    const defaults: Record<string, number> = {};
+    for (const oil of OIL_PRODUCTS) {
+      defaults[oil.id] = oil.defaultPrice;
+    }
+    
+    setPrices({ ...defaults, ...productPrices });
+    setLastUpdated(formatUpdateDate(updatedAt));
   }, []);
+
+  useEffect(() => {
+    fetchPrices();
+
+    // Set up a 5-second periodic poll for live prices auto-update
+    const interval = setInterval(fetchPrices, 5000);
+
+    try {
+      const storedPassword = localStorage.getItem(PASSWORD_KEY);
+      if (storedPassword) setAdminPassword(storedPassword);
+    } catch (_e) {}
+
+    return () => clearInterval(interval);
+  }, [fetchPrices]);
 
   const changePassword = useCallback(async (newPassword: string) => {
     setAdminPassword(newPassword);
-    await AsyncStorage.setItem(PASSWORD_KEY, newPassword);
+    try { localStorage.setItem(PASSWORD_KEY, newPassword); } catch (_e) {}
   }, []);
 
   const checkPassword = useCallback(
@@ -94,6 +121,7 @@ export function OilProvider({ children }: { children: React.ReactNode }) {
         prices,
         adminPassword,
         lastUpdated,
+        fetchPrices,
         updatePrices,
         changePassword,
         checkPassword,

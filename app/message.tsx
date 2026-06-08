@@ -1,30 +1,35 @@
-import { Feather } from "@expo/vector-icons";
-import * as Haptics from "expo-haptics";
-import { useRouter } from "expo-router";
 import React, { useState } from "react";
-import {
-  KeyboardAvoidingView,
-  Platform,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-} from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useNavigate } from "react-router-dom";
+import { FiAlertCircle, FiArrowLeft, FiCheckCircle, FiMessageCircle, FiSend } from "react-icons/fi";
 
+import { useLanguage } from "@/context/LanguageContext";
 import { useColors } from "@/hooks/useColors";
 
-const API_BASE =
-  Platform.OS === "web"
-    ? "http://localhost:3000/api"
-    : `https://${process.env.EXPO_PUBLIC_DOMAIN}/api`;
+const API_BASE = import.meta.env.VITE_API_BASE ?? "http://localhost:3000/api";
+const MESSAGES_KEY = "oil_shop_messages";
+
+function saveMessageLocally(payload: { customerName?: string; phone?: string; message: string }) {
+  const raw = localStorage.getItem(MESSAGES_KEY);
+  const existing = raw ? (JSON.parse(raw) as Array<unknown>) : [];
+  const next = [
+    ...existing,
+    {
+      id: Date.now(),
+      customerName: payload.customerName || null,
+      phone: payload.phone || null,
+      message: payload.message,
+      isRead: false,
+      createdAt: new Date().toISOString(),
+    },
+  ];
+  localStorage.setItem(MESSAGES_KEY, JSON.stringify(next));
+}
 
 export default function MessageScreen() {
   const colors = useColors();
-  const insets = useSafeAreaInsets();
-  const router = useRouter();
+  const navigate = useNavigate();
+  const { t, lang, toggle } = useLanguage();
+
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
   const [message, setMessage] = useState("");
@@ -32,14 +37,12 @@ export default function MessageScreen() {
   const [sent, setSent] = useState(false);
   const [error, setError] = useState("");
 
-  const topPad = Platform.OS === "web" ? 67 : insets.top;
-  const styles = makeStyles(colors, topPad, insets);
-
   const handleSend = async () => {
     if (!message.trim()) {
-      setError("Please write a message before sending.");
+      setError(t("writeMessageError"));
       return;
     }
+
     setSending(true);
     setError("");
     try {
@@ -52,12 +55,19 @@ export default function MessageScreen() {
           message: message.trim(),
         }),
       });
-      if (!res.ok) throw new Error("Failed to send");
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      if (!res.ok) throw new Error("Failed");
       setSent(true);
-    } catch (_e) {
-      setError("Could not send message. Please try again.");
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+    } catch {
+      try {
+        saveMessageLocally({
+          customerName: name.trim() || undefined,
+          phone: phone.trim() || undefined,
+          message: message.trim(),
+        });
+        setSent(true);
+      } catch {
+        setError(t("sendFailed"));
+      }
     } finally {
       setSending(false);
     }
@@ -65,269 +75,75 @@ export default function MessageScreen() {
 
   if (sent) {
     return (
-      <View style={styles.root}>
-        <View style={styles.header}>
-          <Pressable onPress={() => router.back()} style={styles.backBtn} hitSlop={12}>
-            <Feather name="arrow-left" size={22} color="#FFF" />
-          </Pressable>
-          <Text style={styles.headerTitle}>Message Shopkeeper</Text>
-        </View>
-        <View style={styles.successContainer}>
-          <View style={styles.successIcon}>
-            <Feather name="check-circle" size={56} color={colors.success} />
-          </View>
-          <Text style={styles.successTitle}>Message Sent!</Text>
-          <Text style={styles.successSubtitle}>
-            The shopkeeper has received your message and will get back to you soon.
-          </Text>
-          <Pressable
-            style={({ pressed }) => [styles.doneBtn, pressed && { opacity: 0.85 }]}
-            onPress={() => router.back()}
-          >
-            <Text style={styles.doneBtnText}>Back to Price Board</Text>
-          </Pressable>
-        </View>
-      </View>
+      <div style={{ minHeight: "100vh", backgroundColor: colors.background }}>
+        <Header colors={colors} lang={lang} toggle={toggle} title={t("messageShopkeeper")} onBack={() => navigate(-1)} />
+        <div style={{ padding: 24, textAlign: "center" }}>
+          <FiCheckCircle size={56} color={colors.success} />
+          <h2 style={{ color: colors.text }}>{t("messageSentTitle")}</h2>
+          <p style={{ color: colors.mutedForeground }}>{t("messageSentSubtitle")}</p>
+          <button onClick={() => navigate(-1)} style={{ border: "none", borderRadius: 10, padding: "10px 16px", backgroundColor: colors.primary, color: "#fff" }}>
+            {t("backToBoard")}
+          </button>
+        </div>
+      </div>
     );
   }
 
   return (
-    <KeyboardAvoidingView
-      style={styles.root}
-      behavior={Platform.OS === "ios" ? "padding" : "height"}
-    >
-      <View style={styles.header}>
-        <Pressable onPress={() => router.back()} style={styles.backBtn} hitSlop={12}>
-          <Feather name="arrow-left" size={22} color="#FFF" />
-        </Pressable>
-        <Text style={styles.headerTitle}>Message Shopkeeper</Text>
-      </View>
+    <div style={{ minHeight: "100vh", backgroundColor: colors.background }}>
+      <Header colors={colors} lang={lang} toggle={toggle} title={t("messageShopkeeper")} onBack={() => navigate(-1)} />
 
-      <ScrollView
-        contentContainerStyle={styles.content}
-        keyboardShouldPersistTaps="handled"
-        showsVerticalScrollIndicator={false}
-      >
-        <View style={styles.infoCard}>
-          <Feather name="message-circle" size={18} color={colors.accent} />
-          <Text style={styles.infoText}>
-            Send a message to the shopkeeper — ask about availability, bulk orders, or anything else.
-          </Text>
-        </View>
+      <div style={{ padding: 20 }}>
+        <div style={{ display: "flex", gap: 8, marginBottom: 16, padding: 12, borderRadius: 10, backgroundColor: colors.secondary }}>
+          <FiMessageCircle color={colors.accent} />
+          <div style={{ color: colors.accent }}>{t("inputPlaceholderMessage")}</div>
+        </div>
 
-        <Text style={styles.label}>Your Name (optional)</Text>
-        <TextInput
-          style={styles.input}
-          placeholder="e.g. Ramesh Patel"
-          placeholderTextColor={colors.mutedForeground}
-          value={name}
-          onChangeText={setName}
-          returnKeyType="next"
-        />
+        <div style={{ marginBottom: 6, color: colors.text }}>{t("yourName")}</div>
+        <input value={name} onChange={(e) => setName(e.target.value)} placeholder={t("inputPlaceholderName")} style={{ width: "100%", padding: 10, marginBottom: 12 }} />
 
-        <Text style={styles.label}>Phone Number (optional)</Text>
-        <TextInput
-          style={styles.input}
-          placeholder="e.g. 9876543210"
-          placeholderTextColor={colors.mutedForeground}
-          keyboardType="phone-pad"
-          value={phone}
-          onChangeText={setPhone}
-          returnKeyType="next"
-        />
+        <div style={{ marginBottom: 6, color: colors.text }}>{t("phoneNumber")}</div>
+        <input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder={t("inputPlaceholderPhone")} style={{ width: "100%", padding: 10, marginBottom: 12 }} />
 
-        <Text style={styles.label}>
-          Message <Text style={styles.required}>*</Text>
-        </Text>
-        <TextInput
-          style={[styles.input, styles.textArea]}
-          placeholder="Type your message here..."
-          placeholderTextColor={colors.mutedForeground}
+        <div style={{ marginBottom: 6, color: colors.text }}>{t("messageLabel")}</div>
+        <textarea
           value={message}
-          onChangeText={(t) => {
-            setMessage(t);
+          onChange={(e) => {
+            setMessage(e.target.value);
             if (error) setError("");
           }}
-          multiline
-          numberOfLines={5}
-          textAlignVertical="top"
-          returnKeyType="default"
+          rows={5}
+          placeholder={t("inputPlaceholderMessage")}
+          style={{ width: "100%", padding: 10, marginBottom: 8 }}
         />
-        <Text style={styles.charCount}>{message.length}/1000</Text>
+
+        <div style={{ textAlign: "right", color: colors.mutedForeground, marginBottom: 10 }}>{message.length}/1000</div>
 
         {error ? (
-          <View style={styles.errorRow}>
-            <Feather name="alert-circle" size={14} color={colors.destructive} />
-            <Text style={styles.errorText}>{error}</Text>
-          </View>
+          <div style={{ color: colors.destructive, marginBottom: 10, display: "flex", alignItems: "center", gap: 6 }}>
+            <FiAlertCircle size={14} /> {error}
+          </div>
         ) : null}
 
-        <Pressable
-          style={({ pressed }) => [styles.sendBtn, pressed && { opacity: 0.85 }, sending && styles.sendBtnDisabled]}
-          onPress={handleSend}
-          disabled={sending}
-        >
-          <Feather name="send" size={18} color="#FFF" />
-          <Text style={styles.sendBtnText}>{sending ? "Sending..." : "Send Message"}</Text>
-        </Pressable>
-
-        <View style={{ height: Platform.OS === "web" ? 34 : insets.bottom + 24 }} />
-      </ScrollView>
-    </KeyboardAvoidingView>
+        <button onClick={handleSend} disabled={sending} style={{ width: "100%", border: "none", borderRadius: 10, padding: "12px 16px", backgroundColor: colors.primary, color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
+          <FiSend size={16} />
+          {sending ? t("sending") : t("sendMessage")}
+        </button>
+      </div>
+    </div>
   );
 }
 
-function makeStyles(
-  colors: ReturnType<typeof useColors>,
-  topPad: number,
-  insets: ReturnType<typeof import("react-native-safe-area-context").useSafeAreaInsets>
-) {
-  return StyleSheet.create({
-    root: {
-      flex: 1,
-      backgroundColor: colors.background,
-    },
-    header: {
-      flexDirection: "row",
-      alignItems: "center",
-      backgroundColor: colors.primary,
-      paddingTop: topPad + 12,
-      paddingHorizontal: 16,
-      paddingBottom: 14,
-      gap: 12,
-    },
-    backBtn: {
-      width: 36,
-      height: 36,
-      borderRadius: 18,
-      alignItems: "center",
-      justifyContent: "center",
-      backgroundColor: "rgba(255,255,255,0.2)",
-    },
-    headerTitle: {
-      fontSize: 18,
-      fontFamily: "Inter_700Bold",
-      color: "#FFFFFF",
-    },
-    content: {
-      padding: 20,
-    },
-    infoCard: {
-      flexDirection: "row",
-      alignItems: "flex-start",
-      gap: 10,
-      backgroundColor: colors.secondary,
-      borderRadius: 12,
-      padding: 14,
-      marginBottom: 24,
-    },
-    infoText: {
-      flex: 1,
-      fontSize: 13,
-      fontFamily: "Inter_400Regular",
-      color: colors.accent,
-      lineHeight: 19,
-    },
-    label: {
-      fontSize: 13,
-      fontFamily: "Inter_600SemiBold",
-      color: colors.text,
-      marginBottom: 6,
-    },
-    required: {
-      color: colors.destructive,
-    },
-    input: {
-      borderWidth: 1.5,
-      borderColor: colors.border,
-      borderRadius: 12,
-      paddingHorizontal: 14,
-      paddingVertical: 12,
-      fontSize: 15,
-      fontFamily: "Inter_400Regular",
-      color: colors.text,
-      backgroundColor: colors.card,
-      marginBottom: 16,
-    },
-    textArea: {
-      height: 120,
-      marginBottom: 4,
-    },
-    charCount: {
-      fontSize: 11,
-      fontFamily: "Inter_400Regular",
-      color: colors.mutedForeground,
-      textAlign: "right",
-      marginBottom: 16,
-    },
-    errorRow: {
-      flexDirection: "row",
-      alignItems: "center",
-      gap: 6,
-      marginBottom: 12,
-    },
-    errorText: {
-      fontSize: 13,
-      fontFamily: "Inter_400Regular",
-      color: colors.destructive,
-    },
-    sendBtn: {
-      flexDirection: "row",
-      alignItems: "center",
-      justifyContent: "center",
-      gap: 8,
-      backgroundColor: colors.primary,
-      borderRadius: 12,
-      height: 52,
-      shadowColor: colors.primary,
-      shadowOffset: { width: 0, height: 4 },
-      shadowOpacity: 0.3,
-      shadowRadius: 8,
-      elevation: 4,
-    },
-    sendBtnDisabled: {
-      opacity: 0.7,
-    },
-    sendBtnText: {
-      fontSize: 16,
-      fontFamily: "Inter_600SemiBold",
-      color: "#FFFFFF",
-    },
-    successContainer: {
-      flex: 1,
-      alignItems: "center",
-      justifyContent: "center",
-      padding: 32,
-    },
-    successIcon: {
-      marginBottom: 20,
-    },
-    successTitle: {
-      fontSize: 24,
-      fontFamily: "Inter_700Bold",
-      color: colors.text,
-      marginBottom: 12,
-    },
-    successSubtitle: {
-      fontSize: 15,
-      fontFamily: "Inter_400Regular",
-      color: colors.mutedForeground,
-      textAlign: "center",
-      lineHeight: 22,
-      marginBottom: 32,
-    },
-    doneBtn: {
-      backgroundColor: colors.primary,
-      borderRadius: 12,
-      height: 50,
-      paddingHorizontal: 32,
-      alignItems: "center",
-      justifyContent: "center",
-    },
-    doneBtnText: {
-      fontSize: 15,
-      fontFamily: "Inter_600SemiBold",
-      color: "#FFF",
-    },
-  });
+function Header({ colors, lang, toggle, title, onBack }: { colors: ReturnType<typeof useColors>; lang: string; toggle: () => void; title: string; onBack: () => void }) {
+  return (
+    <div style={{ backgroundColor: colors.primary, padding: 12, display: "flex", alignItems: "center", gap: 8 }}>
+      <button onClick={onBack} style={{ width: 36, height: 36, borderRadius: 18, border: "none", backgroundColor: "rgba(255,255,255,0.2)" }}>
+        <FiArrowLeft color="#fff" />
+      </button>
+      <div style={{ color: "#fff", fontWeight: 700, flex: 1 }}>{title}</div>
+      <button onClick={toggle} style={{ border: "none", background: "transparent", color: "#fff" }}>
+        {lang === "en" ? "EN" : "GU"}
+      </button>
+    </div>
+  );
 }

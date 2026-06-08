@@ -1,21 +1,11 @@
-import { Feather } from "@expo/vector-icons";
-import { useRouter } from "expo-router";
 import React, { useMemo, useState } from "react";
-import {
-  FlatList,
-  Image,
-  Platform,
-  Pressable,
-  StatusBar,
-  StyleSheet,
-  Text,
-  View,
-} from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useNavigate } from "react-router-dom";
+import { FiClock, FiLock, FiMessageCircle } from "react-icons/fi";
 
+import { useLanguage } from "@/context/LanguageContext";
 import { useOilContext } from "@/context/OilContext";
-import { OIL_PRODUCTS, OilType } from "@/data/oils";
 import imageMap from "@/data/imageMap";
+import { OIL_PRODUCTS, OilType } from "@/data/oils";
 import { useColors } from "@/hooks/useColors";
 
 type Filter = "All" | OilType;
@@ -23,20 +13,15 @@ const FILTERS: Filter[] = ["All", "Groundnut", "Sunflower"];
 
 export default function HomeScreen() {
   const colors = useColors();
-  const insets = useSafeAreaInsets();
-  const router = useRouter();
+  const navigate = useNavigate();
   const { prices, lastUpdated } = useOilContext();
+  const { t, lang, toggle } = useLanguage();
   const [activeFilter, setActiveFilter] = useState<Filter>("All");
 
   const filtered = useMemo(() => {
     if (activeFilter === "All") return OIL_PRODUCTS;
     return OIL_PRODUCTS.filter((o) => o.type === activeFilter);
   }, [activeFilter]);
-
-  const topPad =
-    Platform.OS === "web" ? 67 : insets.top;
-
-  const styles = makeStyles(colors, topPad);
 
   const today = new Date().toLocaleDateString("en-IN", {
     weekday: "long",
@@ -46,291 +31,88 @@ export default function HomeScreen() {
   });
 
   return (
-    <View style={styles.root}>
-      <StatusBar barStyle="light-content" backgroundColor={colors.primary} />
+    <div style={{ minHeight: "100vh", backgroundColor: colors.background }}>
+      <header style={{ backgroundColor: colors.primary, padding: 16 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <div>
+            <div style={{ fontSize: 22, fontWeight: 700, color: "#fff" }}>Shree Ram Trading</div>
+            <div style={{ fontSize: 12, color: "rgba(255,255,255,0.8)" }}>{today}</div>
+          </div>
+          <div style={{ display: "flex", gap: 8 }}>
+            <button onClick={toggle} style={{ width: 36, height: 36, borderRadius: 18, border: "none", color: "#fff", backgroundColor: "rgba(255,255,255,0.2)" }}>
+              {lang === "en" ? "EN" : "GU"}
+            </button>
+            <button onClick={() => navigate("/admin-login")} style={{ width: 36, height: 36, borderRadius: 18, border: "none", backgroundColor: "rgba(255,255,255,0.2)" }}>
+              <FiLock color={colors.primaryForeground} />
+            </button>
+          </div>
+        </div>
 
-      {/* Header */}
-      <View style={styles.header}>
-        <View style={styles.headerContent}>
-          <View>
-            <Text style={styles.shopName}>Shree Ram Treding</Text>
-            <Text style={styles.headerDate}>{today}</Text>
-          </View>
-          <Pressable
-            onPress={() => router.push("/admin-login")}
-            style={styles.adminBtn}
-            hitSlop={12}
-          >
-            <Feather name="lock" size={20} color={colors.primaryForeground} />
-          </Pressable>
-        </View>
-
-        {/* Filter pills + Message button row */}
-        <View style={styles.filterRow}>
+        <div style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap" }}>
           {FILTERS.map((f) => (
-            <Pressable
+            <button
               key={f}
-              onPress={() => setActiveFilter(f)}
-              style={[
-                styles.filterPill,
-                activeFilter === f && styles.filterPillActive,
-              ]}
+              onClick={() => setActiveFilter(f)}
+              style={{
+                padding: "6px 14px",
+                borderRadius: 20,
+                border: "none",
+                backgroundColor: activeFilter === f ? "#fff" : "rgba(255,255,255,0.2)",
+                color: activeFilter === f ? colors.primary : "#fff",
+              }}
             >
-              <Text
-                style={[
-                  styles.filterText,
-                  activeFilter === f && styles.filterTextActive,
-                ]}
-              >
-                {f}
-              </Text>
-            </Pressable>
+              {f === "All" ? t("all") : f === "Groundnut" ? t("groundnut") : t("sunflower")}
+            </button>
           ))}
-          <Pressable
-            onPress={() => router.push("/message")}
-            style={styles.msgPill}
-            hitSlop={8}
-          >
-            <Feather name="message-circle" size={14} color="#FFF" />
-            <Text style={styles.msgPillText}>Message Us</Text>
-          </Pressable>
-        </View>
-      </View>
+          <button onClick={() => navigate("/message")} style={{ marginLeft: "auto", padding: "6px 12px", borderRadius: 20, border: "1px solid rgba(255,255,255,0.4)", backgroundColor: "rgba(255,255,255,0.15)", color: "#fff" }}>
+            <FiMessageCircle style={{ marginRight: 6 }} />
+            {t("messageUs")}
+          </button>
+        </div>
+      </header>
 
-      <FlatList
-        data={filtered}
-        keyExtractor={(item) => item.id}
-        contentContainerStyle={styles.list}
-        showsVerticalScrollIndicator={false}
-        ItemSeparatorComponent={() => <View style={styles.separator} />}
-        ListHeaderComponent={
-          lastUpdated ? (
-            <View style={styles.updatedBadge}>
-              <Feather name="clock" size={12} color={colors.mutedForeground} />
-              <Text style={styles.updatedText}>
-                Updated: {lastUpdated}
-              </Text>
-            </View>
-          ) : null
-        }
-        ListFooterComponent={<View style={{ height: Platform.OS === "web" ? 34 : insets.bottom + 16 }} />}
-        renderItem={({ item }) => {
-          const price = prices[item.id] ?? item.defaultPrice;
-          const pricePerLtr = (price / item.weightLtr).toFixed(0);
-          const isGroundnut = item.type === "Groundnut";
+      <main style={{ padding: 16 }}>
+        {lastUpdated ? (
+          <div style={{ display: "inline-flex", alignItems: "center", gap: 6, marginBottom: 12, borderRadius: 18, padding: "6px 10px", backgroundColor: colors.muted }}>
+            <FiClock color={colors.mutedForeground} />
+            <span style={{ color: colors.mutedForeground, fontSize: 13 }}>
+              {t("updated")} {lastUpdated}
+            </span>
+          </div>
+        ) : null}
 
-          return (
-            <View style={styles.card}>
-              <Image
-                source={imageMap[item.imageKey]}
-                style={styles.cardImage}
-                resizeMode="cover"
-              />
-              <View style={styles.cardBody}>
-                <View style={[styles.typeBadge, isGroundnut ? styles.groundnutBadge : styles.sunflowerBadge]}>
-                  <Text style={styles.typeBadgeText}>{item.type}</Text>
-                </View>
-                <Text style={styles.brandName}>{item.brand}</Text>
-                <Text style={styles.productName} numberOfLines={1}>
-                  {item.name}
-                </Text>
-                <Text style={styles.weight}>
-                  {item.weightKg} kg / {item.weightLtr.toFixed(2)} L
-                </Text>
-              </View>
-              <View style={styles.priceBlock}>
-                <Text style={styles.priceLabel}>Per Tin</Text>
-                <Text style={styles.price}>₹{price.toLocaleString("en-IN")}</Text>
-                <Text style={styles.pricePerLtr}>₹{pricePerLtr}/L</Text>
-              </View>
-            </View>
-          );
-        }}
-      />
-    </View>
+
+
+        <div style={{ display: "grid", gap: 12 }}>
+          {filtered.map((item) => {
+            const price = prices[item.id] ?? item.defaultPrice;
+            const pricePerLtr = (price / item.weightLtr).toFixed(0);
+            const isGroundnut = item.type === "Groundnut";
+            return (
+              <div key={item.id} style={{ display: "grid", gridTemplateColumns: "80px 1fr auto", borderRadius: 12, overflow: "hidden", backgroundColor: colors.card }}>
+                <img src={imageMap[item.imageKey]} alt={item.name} style={{ width: 80, height: 92, objectFit: "cover" }} />
+                <div style={{ padding: 10 }}>
+                  <div style={{ display: "inline-block", marginBottom: 4, padding: "2px 7px", borderRadius: 4, backgroundColor: isGroundnut ? "#FEF3C7" : "#FEF9C3" }}>
+                    {t(item.type)}
+                  </div>
+                  <div style={{ color: colors.mutedForeground, fontSize: 12 }}>{item.brand}</div>
+                  <div style={{ color: colors.text, fontWeight: 700 }}>{t(item.name)}</div>
+                  <div style={{ color: colors.mutedForeground, fontSize: 12 }}>
+                    {item.weightKg} kg / {item.weightLtr.toFixed(2)} L
+                  </div>
+                </div>
+                <div style={{ minWidth: 96, padding: 10, textAlign: "right", backgroundColor: colors.secondary }}>
+                  <div style={{ color: colors.mutedForeground, fontSize: 12 }}>{t("perTin")}</div>
+                  <div style={{ fontSize: 16, fontWeight: 700, color: colors.accent }}>Rs {price.toLocaleString("en-IN")}</div>
+                  <div style={{ color: colors.mutedForeground, fontSize: 12 }}>
+                    Rs {pricePerLtr}{t("perLiter")}
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </main>
+    </div>
   );
-}
-
-function makeStyles(colors: ReturnType<typeof useColors>, topPad: number) {
-  return StyleSheet.create({
-    root: {
-      flex: 1,
-      backgroundColor: colors.background,
-    },
-    header: {
-      backgroundColor: colors.primary,
-      paddingTop: topPad + 12,
-      paddingHorizontal: 16,
-      paddingBottom: 12,
-      shadowColor: "#000",
-      shadowOffset: { width: 0, height: 2 },
-      shadowOpacity: 0.15,
-      shadowRadius: 4,
-      elevation: 4,
-    },
-    headerContent: {
-      flexDirection: "row",
-      alignItems: "flex-start",
-      justifyContent: "space-between",
-      marginBottom: 12,
-    },
-    shopName: {
-      fontSize: 22,
-      fontFamily: "Inter_700Bold",
-      color: "#FFFFFF",
-      letterSpacing: 0.3,
-    },
-    headerDate: {
-      fontSize: 12,
-      fontFamily: "Inter_400Regular",
-      color: "rgba(255,255,255,0.8)",
-      marginTop: 2,
-    },
-    adminBtn: {
-      width: 36,
-      height: 36,
-      borderRadius: 18,
-      backgroundColor: "rgba(255,255,255,0.2)",
-      alignItems: "center",
-      justifyContent: "center",
-    },
-    filterRow: {
-      flexDirection: "row",
-      gap: 8,
-    },
-    filterPill: {
-      paddingHorizontal: 16,
-      paddingVertical: 6,
-      borderRadius: 20,
-      backgroundColor: "rgba(255,255,255,0.2)",
-    },
-    filterPillActive: {
-      backgroundColor: "#FFFFFF",
-    },
-    filterText: {
-      fontSize: 13,
-      fontFamily: "Inter_500Medium",
-      color: "rgba(255,255,255,0.9)",
-    },
-    filterTextActive: {
-      color: colors.primary,
-    },
-    msgPill: {
-      flexDirection: "row",
-      alignItems: "center",
-      gap: 4,
-      paddingHorizontal: 12,
-      paddingVertical: 6,
-      borderRadius: 20,
-      backgroundColor: "rgba(255,255,255,0.15)",
-      borderWidth: 1,
-      borderColor: "rgba(255,255,255,0.4)",
-      marginLeft: "auto",
-    },
-    msgPillText: {
-      fontSize: 12,
-      fontFamily: "Inter_500Medium",
-      color: "#FFF",
-    },
-    list: {
-      padding: 16,
-    },
-    updatedBadge: {
-      flexDirection: "row",
-      alignItems: "center",
-      gap: 4,
-      marginBottom: 12,
-      paddingHorizontal: 10,
-      paddingVertical: 5,
-      backgroundColor: colors.muted,
-      borderRadius: 20,
-      alignSelf: "flex-start",
-    },
-    updatedText: {
-      fontSize: 11,
-      fontFamily: "Inter_400Regular",
-      color: colors.mutedForeground,
-    },
-    separator: {
-      height: 10,
-    },
-    card: {
-      flexDirection: "row",
-      backgroundColor: colors.card,
-      borderRadius: 14,
-      overflow: "hidden",
-      shadowColor: "#000",
-      shadowOffset: { width: 0, height: 1 },
-      shadowOpacity: 0.08,
-      shadowRadius: 3,
-      elevation: 2,
-    },
-    cardImage: {
-      width: 80,
-      height: 90,
-    },
-    cardBody: {
-      flex: 1,
-      padding: 10,
-      justifyContent: "center",
-    },
-    typeBadge: {
-      alignSelf: "flex-start",
-      paddingHorizontal: 7,
-      paddingVertical: 2,
-      borderRadius: 4,
-      marginBottom: 4,
-    },
-    groundnutBadge: {
-      backgroundColor: "#FEF3C7",
-    },
-    sunflowerBadge: {
-      backgroundColor: "#FEF9C3",
-    },
-    typeBadgeText: {
-      fontSize: 10,
-      fontFamily: "Inter_600SemiBold",
-      color: "#92400E",
-    },
-    brandName: {
-      fontSize: 11,
-      fontFamily: "Inter_500Medium",
-      color: colors.mutedForeground,
-    },
-    productName: {
-      fontSize: 13,
-      fontFamily: "Inter_600SemiBold",
-      color: colors.text,
-      marginTop: 1,
-    },
-    weight: {
-      fontSize: 11,
-      fontFamily: "Inter_400Regular",
-      color: colors.mutedForeground,
-      marginTop: 2,
-    },
-    priceBlock: {
-      alignItems: "flex-end",
-      justifyContent: "center",
-      padding: 10,
-      backgroundColor: colors.secondary,
-      minWidth: 78,
-    },
-    priceLabel: {
-      fontSize: 10,
-      fontFamily: "Inter_400Regular",
-      color: colors.mutedForeground,
-    },
-    price: {
-      fontSize: 18,
-      fontFamily: "Inter_700Bold",
-      color: colors.accent,
-      marginTop: 2,
-    },
-    pricePerLtr: {
-      fontSize: 11,
-      fontFamily: "Inter_400Regular",
-      color: colors.mutedForeground,
-    },
-  });
 }
