@@ -9,7 +9,11 @@ const DATA = path.join(ROOT, "data");
 const MESSAGES = path.join(DATA, "messages.json");
 const PRICES = path.join(DATA, "prices.json");
 
-if (!fs.existsSync(DATA)) fs.mkdirSync(DATA, { recursive: true });
+if (!fs.existsSync(DATA)) {
+  fs.mkdirSync(DATA, { recursive: true });
+}
+
+/* ---------------- HELPERS ---------------- */
 
 function read(file, fallback) {
   try {
@@ -26,7 +30,7 @@ function write(file, data) {
 /* ---------------- SERVER ---------------- */
 
 const server = http.createServer((req, res) => {
-  const url = new URL(req.url, `http://${req.headers.host}`);
+const url = new URL(req.url || "/", `http://${req.headers.host}`);
   const pathName = url.pathname;
 
   res.setHeader("Access-Control-Allow-Origin", "*");
@@ -38,7 +42,7 @@ const server = http.createServer((req, res) => {
     return res.end();
   }
 
-  /* ---------------- API MESSAGES ---------------- */
+  /* ---------------- MESSAGES ---------------- */
 
   if (pathName === "/api/messages") {
     if (req.method === "GET") {
@@ -52,29 +56,34 @@ const server = http.createServer((req, res) => {
       req.on("data", (c) => (body += c));
 
       req.on("end", () => {
-        const data = JSON.parse(body || "{}");
+        try {
+          const data = JSON.parse(body || "{}");
 
-        if (!data.message) {
-          res.writeHead(400);
-          return res.end(JSON.stringify({ error: "Message required" }));
+          if (!data.message) {
+            res.writeHead(400);
+            return res.end(JSON.stringify({ error: "Message required" }));
+          }
+
+          const msgs = read(MESSAGES, []);
+
+          const newMsg = {
+            id: Date.now(),
+            customerName: data.customerName || null,
+            phone: data.phone || null,
+            message: data.message,
+            isRead: false,
+            createdAt: new Date().toISOString(),
+          };
+
+          msgs.push(newMsg);
+          write(MESSAGES, msgs);
+
+          res.writeHead(201, { "content-type": "application/json" });
+          return res.end(JSON.stringify(newMsg));
+        } catch {
+          res.writeHead(500);
+          return res.end(JSON.stringify({ error: "Invalid JSON" }));
         }
-
-        const msgs = read(MESSAGES, []);
-
-        const newMsg = {
-          id: Date.now(),
-          customerName: data.customerName || null,
-          phone: data.phone || null,
-          message: data.message,
-          isRead: false,
-          createdAt: new Date().toISOString(),
-        };
-
-        msgs.push(newMsg);
-        write(MESSAGES, msgs);
-
-        res.writeHead(201, { "content-type": "application/json" });
-        res.end(JSON.stringify(newMsg));
       });
     }
   }
@@ -97,34 +106,69 @@ const server = http.createServer((req, res) => {
     return res.end(JSON.stringify({ success: true }));
   }
 
-  /* ---------------- STATIC FRONTEND ---------------- */
+  /* ---------------- PRICES ---------------- */
+
+  if (pathName === "/api/prices") {
+    if (req.method === "GET") {
+      res.writeHead(200, { "content-type": "application/json" });
+      return res.end(JSON.stringify(read(PRICES, {})));
+    }
+
+    if (req.method === "POST") {
+      let body = "";
+
+      req.on("data", (c) => (body += c));
+
+      req.on("end", () => {
+        try {
+          const data = JSON.parse(body || "{}");
+
+          const updated = {
+            ...read(PRICES, {}),
+            ...data,
+            updatedAt: new Date().toISOString(),
+          };
+
+          write(PRICES, updated);
+
+          res.writeHead(200, { "content-type": "application/json" });
+          return res.end(JSON.stringify(updated));
+        } catch {
+          res.writeHead(500, { "content-type": "application/json" });
+          return res.end(JSON.stringify({ error: "Invalid data" }));
+        }
+      });
+    }
+  }
+
+  /* ---------------- STATIC FILES ---------------- */
 
   const filePath = path.join(DIST, pathName);
 
   if (fs.existsSync(filePath) && fs.statSync(filePath).isFile()) {
-  const ext = path.extname(filePath);
+    const ext = path.extname(filePath);
 
-  const mimeTypes = {
-    ".html": "text/html",
-    ".js": "application/javascript",
-    ".mjs": "application/javascript",
-    ".css": "text/css",
-    ".json": "application/json",
-    ".png": "image/png",
-    ".jpg": "image/jpeg",
-    ".jpeg": "image/jpeg",
-    ".svg": "image/svg+xml",
-    ".ico": "image/x-icon",
-    ".woff": "font/woff",
-    ".woff2": "font/woff2"
-  };
+    const mimeTypes = {
+      ".html": "text/html",
+      ".js": "application/javascript",
+      ".mjs": "application/javascript",
+      ".css": "text/css",
+      ".json": "application/json",
+      ".png": "image/png",
+      ".jpg": "image/jpeg",
+      ".jpeg": "image/jpeg",
+      ".svg": "image/svg+xml",
+      ".ico": "image/x-icon",
+      ".woff": "font/woff",
+      ".woff2": "font/woff2",
+    };
 
-  res.writeHead(200, {
-    "Content-Type": mimeTypes[ext] || "application/octet-stream"
-  });
+    res.writeHead(200, {
+      "Content-Type": mimeTypes[ext] || "application/octet-stream",
+    });
 
-  return fs.createReadStream(filePath).pipe(res);
-}
+    return fs.createReadStream(filePath).pipe(res);
+  }
 
   /* ---------------- SPA ---------------- */
 
@@ -137,8 +181,10 @@ const server = http.createServer((req, res) => {
   res.end("Not Found");
 });
 
+/* ---------------- START SERVER ---------------- */
+
 const PORT = process.env.PORT || 3000;
 
 server.listen(PORT, "0.0.0.0", () => {
   console.log("🚀 Server running on", PORT);
-});   
+});
