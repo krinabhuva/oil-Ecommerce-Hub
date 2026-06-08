@@ -1,4 +1,3 @@
-// use localStorage for web
 import React, {
   createContext,
   useCallback,
@@ -11,7 +10,7 @@ import { OIL_PRODUCTS } from "@/data/oils";
 
 const PASSWORD_KEY = "@oil_shop_password";
 const DEFAULT_PASSWORD = "1234";
-const API_BASE = import.meta.env.VITE_API_BASE ?? "http://localhost:3000/api";
+const API_BASE = import.meta.env.VITE_API_BASE ?? "/api";
 
 interface OilContextValue {
   prices: Record<string, number>;
@@ -25,95 +24,118 @@ interface OilContextValue {
 
 const OilContext = createContext<OilContextValue | null>(null);
 
-function formatUpdateDate(isoString: string): string {
+/* ---------------- HELPERS ---------------- */
+
+function getDefaultPrices(): Record<string, number> {
+  const defaults: Record<string, number> = {};
+  for (const oil of OIL_PRODUCTS) {
+    defaults[oil.id] = oil.defaultPrice;
+  }
+  return defaults;
+}
+
+function formatDate(iso?: string): string | null {
+  if (!iso) return null;
   try {
-    return new Date(isoString).toLocaleDateString("en-IN", {
-      day: "numeric",
-      month: "short",
-      year: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-    });
-  } catch (_e) {
-    return isoString;
+    return new Date(iso).toLocaleString("en-IN");
+  } catch {
+    return iso;
   }
 }
 
+/* ---------------- PROVIDER ---------------- */
+
 export function OilProvider({ children }: { children: React.ReactNode }) {
-  const [prices, setPrices] = useState<Record<string, number>>(() => {
-    const defaults: Record<string, number> = {};
-    for (const oil of OIL_PRODUCTS) {
-      defaults[oil.id] = oil.defaultPrice;
-    }
-    return defaults;
-  });
+  const [prices, setPrices] = useState<Record<string, number>>(
+    getDefaultPrices()
+  );
+
   const [adminPassword, setAdminPassword] = useState(DEFAULT_PASSWORD);
   const [lastUpdated, setLastUpdated] = useState<string | null>(null);
+
+  /* ---------------- FETCH PRICES ---------------- */
 
   const fetchPrices = useCallback(async () => {
     try {
       const res = await fetch(`${API_BASE}/prices`);
-      if (res.ok) {
-        const data = await res.json();
-        const { updatedAt, ...productPrices } = data;
-        
-        const defaults: Record<string, number> = {};
-        for (const oil of OIL_PRODUCTS) {
-          defaults[oil.id] = oil.defaultPrice;
-        }
-        
-        setPrices({ ...defaults, ...productPrices });
-        setLastUpdated(formatUpdateDate(updatedAt));
-      }
-    } catch (_e) {
-      console.error("Failed to fetch prices from API");
+
+      if (!res.ok) return;
+
+      const data = await res.json();
+
+      const { updatedAt, ...apiPrices } = data || {};
+
+      // merge safely
+      setPrices({
+        ...getDefaultPrices(),
+        ...apiPrices,
+      });
+
+      setLastUpdated(formatDate(updatedAt));
+    } catch (err) {
+      console.error("fetchPrices failed:", err);
     }
   }, []);
 
+  /* ---------------- UPDATE PRICES ---------------- */
+
   const updatePrices = useCallback(async (newPrices: Record<string, number>) => {
-    const res = await fetch(`${API_BASE}/prices`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(newPrices),
-    });
-    if (!res.ok) {
-      throw new Error("Failed to update prices");
+    try {
+      const res = await fetch(`${API_BASE}/prices`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(newPrices),
+      });
+
+      if (!res.ok) throw new Error("Failed to update prices");
+
+      const data = await res.json();
+      const { updatedAt, ...apiPrices } = data || {};
+
+      setPrices({
+        ...getDefaultPrices(),
+        ...apiPrices,
+      });
+
+      setLastUpdated(formatDate(updatedAt));
+    } catch (err) {
+      console.error("updatePrices failed:", err);
+      throw err;
     }
-    const data = await res.json();
-    const { updatedAt, ...productPrices } = data;
-    
-    const defaults: Record<string, number> = {};
-    for (const oil of OIL_PRODUCTS) {
-      defaults[oil.id] = oil.defaultPrice;
-    }
-    
-    setPrices({ ...defaults, ...productPrices });
-    setLastUpdated(formatUpdateDate(updatedAt));
   }, []);
+
+  /* ---------------- INIT + POLLING ---------------- */
 
   useEffect(() => {
     fetchPrices();
 
-    // Set up a 5-second periodic poll for live prices auto-update
-    const interval = setInterval(fetchPrices, 5000);
+    const interval = setInterval(() => {
+      fetchPrices();
+    }, 10000); // 🔥 safer than 5s (reduces Render/API load)
 
     try {
-      const storedPassword = localStorage.getItem(PASSWORD_KEY);
-      if (storedPassword) setAdminPassword(storedPassword);
-    } catch (_e) {}
+      const stored = localStorage.getItem(PASSWORD_KEY);
+      if (stored) setAdminPassword(stored);
+    } catch {}
 
     return () => clearInterval(interval);
   }, [fetchPrices]);
 
+  /* ---------------- PASSWORD ---------------- */
+
   const changePassword = useCallback(async (newPassword: string) => {
     setAdminPassword(newPassword);
-    try { localStorage.setItem(PASSWORD_KEY, newPassword); } catch (_e) {}
+    try {
+      localStorage.setItem(PASSWORD_KEY, newPassword);
+    } catch {}
   }, []);
 
   const checkPassword = useCallback(
     (attempt: string) => attempt === adminPassword,
     [adminPassword]
   );
+
+  /* ---------------- PROVIDER ---------------- */
 
   return (
     <OilContext.Provider
@@ -131,6 +153,8 @@ export function OilProvider({ children }: { children: React.ReactNode }) {
     </OilContext.Provider>
   );
 }
+
+/* ---------------- HOOK ---------------- */
 
 export function useOilContext() {
   const ctx = useContext(OilContext);
