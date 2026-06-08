@@ -102,7 +102,7 @@ const translations: Record<Lang, Record<string, string>> = {
     perLiter: "/લીટર",
     Groundnut: "મગફળી",
     Sunflower: "સૂર્યમુખી",
-    "Maruti Groundnut Oil": "મરુતિ મગફળી તેલ",
+    "Maruti Groundnut Oil": "મારુતિ મગફળી તેલ",
     "Maharani Refined Groundnut Oil": "મહારાણી રિફાઈન્ડ મગફળી તેલ",
     "Saraswati Groundnut Oil": "સરસ્વતી મગફળી તેલ",
     "Saurashtra Pure Oil": "સૌરાષ્ટ્ર પ્યોર તેલ",

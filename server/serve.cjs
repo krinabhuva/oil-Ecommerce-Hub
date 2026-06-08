@@ -9,6 +9,14 @@ const DATA = path.join(ROOT, "data");
 const MESSAGES = path.join(DATA, "messages.json");
 const PRICES = path.join(DATA, "prices.json");
 
+/* ---------------- SAFETY ---------------- */
+
+process.on("uncaughtException", (err) => {
+  console.log("Server Error:", err);
+});
+
+/* ---------------- CREATE DATA ---------------- */
+
 if (!fs.existsSync(DATA)) {
   fs.mkdirSync(DATA, { recursive: true });
 }
@@ -27,11 +35,30 @@ function write(file, data) {
   fs.writeFileSync(file, JSON.stringify(data, null, 2));
 }
 
+/* ---------------- MIME TYPES ---------------- */
+
+const mimeTypes = {
+  ".html": "text/html",
+  ".js": "application/javascript",
+  ".mjs": "application/javascript",
+  ".css": "text/css",
+  ".json": "application/json",
+  ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".svg": "image/svg+xml",
+  ".ico": "image/x-icon",
+  ".woff": "font/woff",
+  ".woff2": "font/woff2",
+};
+
 /* ---------------- SERVER ---------------- */
 
 const server = http.createServer((req, res) => {
   const url = new URL(req.url || "/", `http://${req.headers.host}`);
   const pathName = url.pathname;
+
+  /* ---------------- CORS ---------------- */
 
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
@@ -42,7 +69,48 @@ const server = http.createServer((req, res) => {
     return res.end();
   }
 
-  /* ---------------- MESSAGES ---------------- */
+  /* =====================================================
+     PRICES API
+  ===================================================== */
+
+  if (pathName === "/api/prices") {
+    if (req.method === "GET") {
+      res.writeHead(200, { "content-type": "application/json" });
+      return res.end(JSON.stringify(read(PRICES, {})));
+    }
+
+    if (req.method === "POST") {
+      let body = "";
+
+      req.on("data", (chunk) => (body += chunk));
+
+      req.on("end", () => {
+        try {
+          const data = JSON.parse(body || "{}");
+
+          const updated = {
+            ...read(PRICES, {}),
+            ...data,
+            updatedAt: new Date().toISOString(),
+          };
+
+          write(PRICES, updated);
+
+          res.writeHead(200, { "content-type": "application/json" });
+          return res.end(JSON.stringify(updated));
+        } catch {
+          res.writeHead(500);
+          return res.end(JSON.stringify({ error: "Invalid data" }));
+        }
+      });
+
+      return;
+    }
+  }
+
+  /* =====================================================
+     MESSAGES API
+  ===================================================== */
 
   if (pathName === "/api/messages") {
     if (req.method === "GET") {
@@ -53,46 +121,46 @@ const server = http.createServer((req, res) => {
     if (req.method === "POST") {
       let body = "";
 
-      req.on("data", (c) => (body += c));
+      req.on("data", (chunk) => (body += chunk));
 
       req.on("end", () => {
-        let data;
-
         try {
-          data = JSON.parse(body || "{}");
+          const data = JSON.parse(body || "{}");
+
+          if (!data.message) {
+            res.writeHead(400);
+            return res.end(JSON.stringify({ error: "Message required" }));
+          }
+
+          const msgs = read(MESSAGES, []);
+
+          const newMsg = {
+            id: Date.now(),
+            customerName: data.customerName || null,
+            phone: data.phone || null,
+            message: data.message,
+            isRead: false,
+            createdAt: new Date().toISOString(),
+          };
+
+          msgs.push(newMsg);
+          write(MESSAGES, msgs);
+
+          res.writeHead(201, { "content-type": "application/json" });
+          return res.end(JSON.stringify(newMsg));
         } catch {
-          res.writeHead(400, { "content-type": "application/json" });
+          res.writeHead(500);
           return res.end(JSON.stringify({ error: "Invalid JSON" }));
         }
-
-        if (!data.message) {
-          res.writeHead(400, { "content-type": "application/json" });
-          return res.end(JSON.stringify({ error: "Message required" }));
-        }
-
-        const msgs = read(MESSAGES, []);
-
-        const newMsg = {
-          id: Date.now(),
-          customerName: data.customerName || null,
-          phone: data.phone || null,
-          message: data.message,
-          isRead: false,
-          createdAt: new Date().toISOString(),
-        };
-
-        msgs.push(newMsg);
-        write(MESSAGES, msgs);
-
-        res.writeHead(201, { "content-type": "application/json" });
-        return res.end(JSON.stringify(newMsg));
       });
 
       return;
     }
   }
 
-  /* ---------------- MARK READ ---------------- */
+  /* =====================================================
+     MARK READ
+  ===================================================== */
 
   const match = pathName.match(/^\/api\/messages\/(\d+)\/read$/);
 
@@ -110,83 +178,35 @@ const server = http.createServer((req, res) => {
     return res.end(JSON.stringify({ success: true }));
   }
 
-  /* ---------------- PRICES ---------------- */
-
-  if (pathName === "/api/prices") {
-    if (req.method === "GET") {
-      res.writeHead(200, { "content-type": "application/json" });
-      return res.end(JSON.stringify(read(PRICES, {})));
-    }
-
-    if (req.method === "POST") {
-      let body = "";
-
-      req.on("data", (c) => (body += c));
-
-      req.on("end", () => {
-        let data;
-
-        try {
-          data = JSON.parse(body || "{}");
-        } catch {
-          res.writeHead(400, { "content-type": "application/json" });
-          return res.end(JSON.stringify({ error: "Invalid JSON" }));
-        }
-
-        const updated = {
-          ...read(PRICES, {}),
-          ...data,
-          updatedAt: new Date().toISOString(),
-        };
-
-        write(PRICES, updated);
-
-        res.writeHead(200, { "content-type": "application/json" });
-        return res.end(JSON.stringify(updated));
-      });
-
-      return;
-    }
-  }
-
-  /* ---------------- STATIC FILES ---------------- */
+  /* =====================================================
+     STATIC FILES (SAFE + FAST)
+  ===================================================== */
 
   const filePath = path.join(DIST, pathName);
 
   if (fs.existsSync(filePath) && fs.statSync(filePath).isFile()) {
-    const ext = path.extname(filePath);
-
-    const mimeTypes = {
-      ".html": "text/html",
-      ".js": "application/javascript",
-      ".mjs": "application/javascript",
-      ".css": "text/css",
-      ".json": "application/json",
-      ".png": "image/png",
-      ".jpg": "image/jpeg",
-      ".jpeg": "image/jpeg",
-      ".svg": "image/svg+xml",
-      ".ico": "image/x-icon",
-      ".woff": "font/woff",
-      ".woff2": "font/woff2",
-    };
+    res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
 
     res.writeHead(200, {
-      "Content-Type": mimeTypes[ext] || "application/octet-stream",
+      "Content-Type": mimeTypes[path.extname(filePath)] || "application/octet-stream",
     });
 
     return fs.createReadStream(filePath).pipe(res);
   }
 
-  /* ---------------- SPA ---------------- */
+  /* =====================================================
+     SPA FIX (THIS FIXES YOUR FIRST-REFRESH ISSUE)
+  ===================================================== */
 
-  if (!pathName.startsWith("/api")) {
+  const indexPath = path.join(DIST, "index.html");
+
+  if (fs.existsSync(indexPath)) {
     res.writeHead(200, { "content-type": "text/html" });
-    return fs.createReadStream(path.join(DIST, "index.html")).pipe(res);
+    return fs.createReadStream(indexPath).pipe(res);
   }
 
-  res.writeHead(404);
-  res.end("Not Found");
+  res.writeHead(200, { "content-type": "text/plain" });
+  return res.end("Loading...");
 });
 
 /* ---------------- START SERVER ---------------- */
