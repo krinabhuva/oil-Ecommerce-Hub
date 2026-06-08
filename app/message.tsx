@@ -5,7 +5,7 @@ import { FiAlertCircle, FiArrowLeft, FiCheckCircle, FiMessageCircle, FiSend } fr
 import { useLanguage } from "@/context/LanguageContext";
 import { useColors } from "@/hooks/useColors";
 
-const API_BASE = import.meta.env.VITE_API_BASE ?? "/api/messages";
+const API_BASE = import.meta.env.VITE_API_BASE ?? "/api";
 const MESSAGES_KEY = "oil_shop_messages";
 
 function saveMessageLocally(payload: { customerName?: string; phone?: string; message: string }) {
