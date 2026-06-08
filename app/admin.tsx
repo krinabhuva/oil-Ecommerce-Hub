@@ -8,7 +8,7 @@ import imageMap from "@/data/imageMap";
 import { OIL_PRODUCTS } from "@/data/oils";
 import { useColors } from "@/hooks/useColors";
 
-const API_BASE = import.meta.env.VITE_API_BASE ?? "http://localhost:3000/api";
+const API_BASE = import.meta.env.VITE_API_BASE ?? "/api";
 const MESSAGES_KEY = "oil_shop_messages";
 
 interface Message {
