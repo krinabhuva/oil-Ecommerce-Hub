@@ -30,7 +30,7 @@ function write(file, data) {
 /* ---------------- SERVER ---------------- */
 
 const server = http.createServer((req, res) => {
-const url = new URL(req.url || "/", `http://${req.headers.host}`);
+  const url = new URL(req.url || "/", `http://${req.headers.host}`);
   const pathName = url.pathname;
 
   res.setHeader("Access-Control-Allow-Origin", "*");
@@ -56,35 +56,39 @@ const url = new URL(req.url || "/", `http://${req.headers.host}`);
       req.on("data", (c) => (body += c));
 
       req.on("end", () => {
+        let data;
+
         try {
-          const data = JSON.parse(body || "{}");
-
-          if (!data.message) {
-            res.writeHead(400);
-            return res.end(JSON.stringify({ error: "Message required" }));
-          }
-
-          const msgs = read(MESSAGES, []);
-
-          const newMsg = {
-            id: Date.now(),
-            customerName: data.customerName || null,
-            phone: data.phone || null,
-            message: data.message,
-            isRead: false,
-            createdAt: new Date().toISOString(),
-          };
-
-          msgs.push(newMsg);
-          write(MESSAGES, msgs);
-
-          res.writeHead(201, { "content-type": "application/json" });
-          return res.end(JSON.stringify(newMsg));
+          data = JSON.parse(body || "{}");
         } catch {
-          res.writeHead(500);
+          res.writeHead(400, { "content-type": "application/json" });
           return res.end(JSON.stringify({ error: "Invalid JSON" }));
         }
+
+        if (!data.message) {
+          res.writeHead(400, { "content-type": "application/json" });
+          return res.end(JSON.stringify({ error: "Message required" }));
+        }
+
+        const msgs = read(MESSAGES, []);
+
+        const newMsg = {
+          id: Date.now(),
+          customerName: data.customerName || null,
+          phone: data.phone || null,
+          message: data.message,
+          isRead: false,
+          createdAt: new Date().toISOString(),
+        };
+
+        msgs.push(newMsg);
+        write(MESSAGES, msgs);
+
+        res.writeHead(201, { "content-type": "application/json" });
+        return res.end(JSON.stringify(newMsg));
       });
+
+      return;
     }
   }
 
@@ -120,24 +124,28 @@ const url = new URL(req.url || "/", `http://${req.headers.host}`);
       req.on("data", (c) => (body += c));
 
       req.on("end", () => {
+        let data;
+
         try {
-          const data = JSON.parse(body || "{}");
-
-          const updated = {
-            ...read(PRICES, {}),
-            ...data,
-            updatedAt: new Date().toISOString(),
-          };
-
-          write(PRICES, updated);
-
-          res.writeHead(200, { "content-type": "application/json" });
-          return res.end(JSON.stringify(updated));
+          data = JSON.parse(body || "{}");
         } catch {
-          res.writeHead(500, { "content-type": "application/json" });
-          return res.end(JSON.stringify({ error: "Invalid data" }));
+          res.writeHead(400, { "content-type": "application/json" });
+          return res.end(JSON.stringify({ error: "Invalid JSON" }));
         }
+
+        const updated = {
+          ...read(PRICES, {}),
+          ...data,
+          updatedAt: new Date().toISOString(),
+        };
+
+        write(PRICES, updated);
+
+        res.writeHead(200, { "content-type": "application/json" });
+        return res.end(JSON.stringify(updated));
       });
+
+      return;
     }
   }
 
